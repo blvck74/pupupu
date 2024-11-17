@@ -8,6 +8,7 @@ from buttons import add_menu_keyboard, delete_menu_keyboard, main_menu_keyboard,
 
 # Определяем состояния для FSM
 class Form(StatesGroup):
+    waiting_for_save_changes = State()
     waiting_for_section = State()
     waiting_for_text = State()
     waiting_for_delete_section = State()
@@ -15,7 +16,6 @@ class Form(StatesGroup):
     waiting_for_view_section = State()
     waiting_for_compare_section = State()
     waiting_for_compare_text = State()
-    waiting_for_save_changes = State()
 
 router = Router()
 
@@ -244,7 +244,48 @@ async def process_text_compare(message: types.Message, state: FSMContext):
     if added_lines:
         response += "\nНовые строки:\n" + "\n".join(added_lines)
 
-    sent_message = await message.answer(response, reply_markup=main_menu_keyboard)
+    sent_message = await message.answer(response + "\n\nВнести изменения?", reply_markup=types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton("Сохранить изменения"), types.KeyboardButton("Отменить изменения")]],
+        resize_keyboard=True
+    ))
+    await state.update_data(new_text=message.text)
+    await state.set_state(Form.waiting_for_save_changes)
+    await asyncio.sleep(600)
+    try:
+        await message.bot.delete_message(chat_id=sent_message.chat.id, message_id=sent_message.message_id)
+    except Exception:
+        pass
+
+# Обработчик для сохранения изменений после сравнения текста
+@router.message(Form.waiting_for_save_changes)
+async def save_changes(message: types.Message, state: FSMContext):
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    user_data = await state.get_data()
+    section = user_data['section']
+    new_text = user_data.get('new_text').splitlines()
+
+    if message.text == "Сохранить изменения":
+        # Удаляем ушедшие строки из базы данных
+        existing_text_rows = database.get_texts_by_section(section)
+        existing_text = [row[1] for row in existing_text_rows]
+
+        removed_lines = [line for line in existing_text if line not in new_text]
+        added_lines = [line for line in new_text if line not in existing_text]
+
+        for line in removed_lines:
+            database.delete_text_by_content(section, line)
+        for line in added_lines:
+            database.insert_text(section, line)
+
+        sent_message = await message.answer("Изменения успешно сохранены!", reply_markup=main_menu_keyboard)
+    elif message.text == "Отменить изменения":
+        sent_message = await message.answer("Изменения отменены.", reply_markup=main_menu_keyboard)
+    else:
+        sent_message = await message.answer("Пожалуйста, выберите 'Сохранить изменения' или 'Отменить изменения'.")
+        return
     await state.clear()
     await asyncio.sleep(600)
     try:
