@@ -50,11 +50,3 @@ compare_menu_keyboard = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
-
-# Меню для подтверждения изменений
-save_changes_menu_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Сохранить изменения"), KeyboardButton(text="Отменить изменения")]
-    ],
-    resize_keyboard=True
-)
